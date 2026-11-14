@@ -1,29 +1,66 @@
+
 name: Build Android APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Build APK
-        run: gradle assembleDebug
+      - name: Check Android Manifest
+        run: |
+          python3 - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
 
-      - uses: actions/upload-artifact@v4
+          found = False
+
+          for root, dirs, files in os.walk("."):
+              dirs[:] = [d for d in dirs if d not in [".git", ".gradle", "build"]]
+              if "AndroidManifest.xml" in files:
+                  path = os.path.join(root, "AndroidManifest.xml")
+                  found = True
+                  print("Checking:", path)
+                  try:
+                      ET.parse(path)
+                      print("XML OK")
+                  except ET.ParseError as e:
+                      print("XML ERROR:", e)
+                      raise
+
+          if not found:
+              raise SystemExit("AndroidManifest.xml not found")
+          PY
+
+      - name: Show project structure
+        run: |
+          find . -maxdepth 4 -type f | sort
+
+      - name: Build APK
+        run: gradle assembleDebug --stacktrace --info
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
           name: Cheatbrawl-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
