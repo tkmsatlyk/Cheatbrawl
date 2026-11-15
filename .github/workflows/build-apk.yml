@@ -26,41 +26,12 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Check Android Manifest
-        run: |
-          python3 - <<'PY'
-          import os
-          import xml.etree.ElementTree as ET
-
-          found = False
-
-          for root, dirs, files in os.walk("."):
-              dirs[:] = [d for d in dirs if d not in [".git", ".gradle", "build"]]
-              if "AndroidManifest.xml" in files:
-                  path = os.path.join(root, "AndroidManifest.xml")
-                  found = True
-                  print("Checking:", path)
-                  try:
-                      ET.parse(path)
-                      print("XML OK")
-                  except ET.ParseError as e:
-                      print("XML ERROR:", e)
-                      raise
-
-          if not found:
-              raise SystemExit("AndroidManifest.xml not found")
-          PY
-
-      - name: Show project structure
-        run: |
-          find . -maxdepth 4 -type f | sort
-
       - name: Build APK
-        run: gradle assembleDebug --stacktrace --info
+        run: gradle :app:assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Cheatbrawl-debug
-          path: build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
