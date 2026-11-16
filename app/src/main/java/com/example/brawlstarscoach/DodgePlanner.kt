@@ -2,6 +2,7 @@
 package com.example.brawlstarscoach
 
 import kotlin.math.sqrt
+import kotlin.math.max
 
 data class Point2D(
     val x: Float,
@@ -43,14 +44,13 @@ class DodgePlanner {
 
         if (threats.isEmpty()) {
             return DodgeResult(
-                Point2D(0f, 0f),
-                0f,
-                false
+                Point2D(0f, 0f), 0f, false
             )
         }
 
         var bestDirection = Point2D(0f, 0f)
-        var bestScore = Float.NEGATIVE_INFINITY
+        var bestDanger = Float.POSITIVE_INFINITY
+        var found = false
 
         for (direction in directions) {
 
@@ -93,35 +93,27 @@ class DodgePlanner {
                     (futurePlayer.y - futureY)
                 )
 
-                val safeDistance = threat.radius + 35f
+                val safeDistance = max(
+                    1f, threat.radius + 35f
+                )
 
-                if (distance < safeDistance) {
-                    danger +=
-                        (safeDistance - distance) /
-                        safeDistance
-                }
+                danger += max(
+                    0f,
+                    (safeDistance - distance) / safeDistance
+                )
             }
 
-            val score = -danger
-
-            if (score > bestScore) {
-                bestScore = score
+            if (danger < bestDanger) {
+                bestDanger = danger
                 bestDirection = Point2D(dx, dy)
+                found = true
             }
-        }
-
-        if (bestScore == Float.NEGATIVE_INFINITY) {
-            return DodgeResult(
-                Point2D(0f, 0f),
-                1f,
-                false
-            )
         }
 
         return DodgeResult(
             direction = bestDirection,
-            dangerScore = -bestScore,
-            available = true
+            dangerScore = if (found) bestDanger else 1f,
+            available = found
         )
     }
 }
