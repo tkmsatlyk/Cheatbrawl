@@ -1,17 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
+
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
 
     <application
         android:allowBackup="false"
-        android:label="CheatBrawl AI Coach"
-        android:supportsRtl="true"
+        android:label="CheatBrawl AI"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
         <activity
-            android:name=".MainActivity"
+            android:name="com.example.brawlstarscoach.MainActivity"
             android:exported="true">
 
             <intent-filter>
@@ -22,7 +23,7 @@
         </activity>
 
         <service
-            android:name=".ScreenCaptureService"
+            android:name="com.example.brawlstarscoach.ScreenCaptureService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
 
