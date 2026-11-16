@@ -38,7 +38,7 @@ class MainActivity : Activity() {
             setPadding(0, 30, 0, 30)
         }
 
-        val button = Button(this).apply {
+        val startButton = Button(this).apply {
             text = "START SCREEN ANALYSIS"
             setOnClickListener {
                 val manager = getSystemService(
@@ -52,9 +52,21 @@ class MainActivity : Activity() {
             }
         }
 
+        val stopButton = Button(this).apply {
+            text = "STOP SCREEN ANALYSIS"
+            setOnClickListener {
+                startService(
+                    Intent(this@MainActivity, ScreenCaptureService::class.java)
+                        .setAction(ScreenCaptureService.ACTION_STOP)
+                )
+                status.text = "Screen capture stopped"
+            }
+        }
+
         layout.addView(title)
         layout.addView(status)
-        layout.addView(button)
+        layout.addView(startButton)
+        layout.addView(stopButton)
 
         setContentView(layout)
     }
@@ -68,10 +80,20 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
 
         if (requestCode == this.requestCode) {
-            status.text = if (resultCode == RESULT_OK) {
-                "Screen permission granted!"
+            if (resultCode == RESULT_OK && data != null) {
+                val serviceIntent = Intent(
+                    this,
+                    ScreenCaptureService::class.java
+                ).apply {
+                    putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, resultCode)
+                    putExtra(ScreenCaptureService.EXTRA_DATA, data)
+                }
+
+                status.text = "Starting screen capture..."
+
+                startForegroundService(serviceIntent)
             } else {
-                "Permission denied"
+                status.text = "Screen permission denied"
             }
         }
     }
