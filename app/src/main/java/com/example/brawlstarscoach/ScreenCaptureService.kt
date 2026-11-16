@@ -1,7 +1,11 @@
 
 package com.example.brawlstarscoach
 
-import android.app.*
+import android.app.Activity
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -22,8 +26,13 @@ class ScreenCaptureService : Service() {
 
     companion object {
         const val ACTION_STOP = "STOP_CAPTURE"
+        const val ACTION_STATUS = "CHEATBRAWL_STATUS"
+
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_DATA = "result_data"
+        const val EXTRA_MOTION = "motion_score"
+        const val EXTRA_MESSAGE = "message"
+
         private const val CHANNEL_ID = "capture_channel"
         private const val NOTIFICATION_ID = 4102
     }
@@ -32,6 +41,9 @@ class ScreenCaptureService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     private var handlerThread: HandlerThread? = null
+    private var handler: Handler? = null
+
+    private val analyzer = FrameAnalyzer()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -52,49 +64,57 @@ class ScreenCaptureService : Service() {
         createNotificationChannel()
 
         val notification = Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("Cheatbrawl")
-            .setContentText("Screen capture is active")
+            .setContentTitle("CheatBrawl AI Coach")
+            .setContentText("Screen analysis is active")
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setOngoing(true)
             .build()
 
-        if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
-
-        val resultCode = intent?.getIntExtra(
-            EXTRA_RESULT_CODE, Activity.RESULT_CANCELED
-        ) ?: Activity.RESULT_CANCELED
-
-        val data = if (Build.VERSION.SDK_INT >= 33) {
-            intent?.getParcelableExtra(EXTRA_DATA, Intent::class.java)
-        } else {
-            @Suppress("DEPRECATION")
-            intent?.getParcelableExtra(EXTRA_DATA)
-        }
-
-        if (resultCode != Activity.RESULT_OK || data == null) {
-            stopSelf()
-            return START_NOT_STICKY
-        }
-
         try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+
+            val resultCode = intent?.getIntExtra(
+                EXTRA_RESULT_CODE,
+                Activity.RESULT_CANCELED
+            ) ?: Activity.RESULT_CANCELED
+
+            val data: Intent? = if (Build.VERSION.SDK_INT >= 33) {
+                intent?.getParcelableExtra(
+                    EXTRA_DATA,
+                    Intent::class.java
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                intent?.getParcelableExtra(EXTRA_DATA)
+            }
+
+            if (resultCode != Activity.RESULT_OK || data == null) {
+                sendStatus("Screen permission missing")
+                stopSelf()
+                return START_NOT_STICKY
+            }
+
             val manager = getSystemService(
                 Context.MEDIA_PROJECTION_SERVICE
             ) as MediaProjectionManager
 
-            projection = manager.getMediaProjection(resultCode, data)
+            projection = manager.getMediaProjection(
+                resultCode,
+                data
+            )
 
             startCapture()
 
         } catch (e: Exception) {
-            e.printStackTrace()
+            sendStatus("Capture error: ${e.message}")
             stopCapture()
             stopSelf()
         }
@@ -103,6 +123,7 @@ class ScreenCaptureService : Service() {
     }
 
     private fun startCapture() {
+
         val metrics = DisplayMetrics()
 
         @Suppress("DEPRECATION")
@@ -117,11 +138,13 @@ class ScreenCaptureService : Service() {
         val height = metrics.heightPixels
         val density = metrics.densityDpi
 
-        handlerThread = HandlerThread("CheatbrawlCapture").apply {
+        handlerThread = HandlerThread(
+            "CheatBrawlAnalyzer"
+        ).apply {
             start()
         }
 
-        val handler = Handler(handlerThread!!.looper)
+        handler = Handler(handlerThread!!.looper)
 
         imageReader = ImageReader.newInstance(
             width,
@@ -130,10 +153,26 @@ class ScreenCaptureService : Service() {
             2
         )
 
-        imageReader?.setOnImageAvailableListener({ reader ->
-            val image = reader.acquireLatestImage()
-            image?.close()
-        }, handler)
+        imageReader?.setOnImageAvailableListener(
+            { reader ->
+
+                val image = reader.acquireLatestImage()
+                    ?: return@setOnImageAvailableListener
+
+                try {
+                    val result = analyzer.analyze(image)
+
+                    sendMotion(result.motionScore)
+
+                } catch (e: Exception) {
+                    sendStatus("Frame error: ${e.message}")
+                } finally {
+                    image.close()
+                }
+
+            },
+            handler
+        )
 
         projection?.registerCallback(
             object : MediaProjection.Callback() {
@@ -146,7 +185,7 @@ class ScreenCaptureService : Service() {
         )
 
         virtualDisplay = projection?.createVirtualDisplay(
-            "CheatbrawlScreen",
+            "CheatBrawlScreen",
             width,
             height,
             density,
@@ -155,9 +194,35 @@ class ScreenCaptureService : Service() {
             null,
             handler
         )
+
+        if (virtualDisplay == null) {
+            throw IllegalStateException(
+                "VirtualDisplay creation failed"
+            )
+        }
+
+        sendStatus("Screen capture active")
+    }
+
+    private fun sendMotion(score: Float) {
+        val intent = Intent(ACTION_STATUS).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_MOTION, score)
+            putExtra(EXTRA_MESSAGE, "Analyzing frames")
+        }
+        sendBroadcast(intent)
+    }
+
+    private fun sendStatus(message: String) {
+        val intent = Intent(ACTION_STATUS).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_MESSAGE, message)
+        }
+        sendBroadcast(intent)
     }
 
     private fun stopCapture() {
+
         virtualDisplay?.release()
         virtualDisplay = null
 
@@ -165,20 +230,25 @@ class ScreenCaptureService : Service() {
         imageReader?.close()
         imageReader = null
 
-        projection?.stop()
+        val oldProjection = projection
         projection = null
+        oldProjection?.stop()
 
         handlerThread?.quitSafely()
         handlerThread = null
+        handler = null
+
+        analyzer.reset()
 
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Screen capture",
+                "Screen analysis",
                 NotificationManager.IMPORTANCE_LOW
             )
 
