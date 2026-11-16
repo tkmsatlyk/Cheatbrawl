@@ -2,127 +2,141 @@
 package com.example.brawlstarscoach
 
 import android.app.Activity
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
 import android.graphics.Color
 import android.view.Gravity
-import android.widget.*
-import android.graphics.Typeface
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
 
 class MainActivity : Activity() {
 
-    private val requestCode = 4102
-    private lateinit var status: TextView
-    private lateinit var prefs: android.content.SharedPreferences
+    companion object {
+        private const val REQUEST_CAPTURE = 4102
+    }
 
-    private val purple = Color.rgb(170, 90, 255)
-    private val dark = Color.rgb(20, 20, 29)
+    private lateinit var status: TextView
+    private lateinit var motion: TextView
+
+    private var receiverRegistered = false
+
+    private val statusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(
+            context: Context?,
+            intent: Intent?
+        ) {
+            if (intent?.action != ScreenCaptureService.ACTION_STATUS) {
+                return
+            }
+
+            val message = intent.getStringExtra(
+                ScreenCaptureService.EXTRA_MESSAGE
+            )
+
+            val score = intent.getFloatExtra(
+                ScreenCaptureService.EXTRA_MOTION,
+                -1f
+            )
+
+            if (message != null) {
+                status.text = message
+            }
+
+            if (score >= 0f) {
+                motion.text = "Motion level: ${
+                    (score * 100).toInt()
+                }%"
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        prefs = getSharedPreferences("cheatbrawl", MODE_PRIVATE)
-
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(dark)
-            setPadding(20, 20, 20, 20)
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(24, 24, 24, 24)
+            setBackgroundColor(Color.rgb(19, 19, 29))
         }
 
         val scroll = ScrollView(this)
-        val menu = LinearLayout(this).apply {
+
+        val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
 
         val title = TextView(this).apply {
-            text = "CHEATBRAWL"
+            text = "CHEATBRAWL AI"
             textSize = 30f
-            setTextColor(purple)
-            typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
+            setTextColor(Color.rgb(180, 110, 255))
+            setPadding(0, 20, 0, 10)
         }
 
         val subtitle = TextView(this).apply {
-            text = "AI COACH  |  CONTROL PANEL"
+            text = "REAL-TIME SCREEN ANALYSIS"
             textSize = 13f
+            gravity = Gravity.CENTER
             setTextColor(Color.LTGRAY)
-            gravity = Gravity.CENTER
         }
 
-        status = TextView(this).apply {
-            text = "SYSTEM READY"
-            textSize = 16f
-            setTextColor(Color.GREEN)
-            gravity = Gravity.CENTER
-            setPadding(0, 25, 0, 25)
+        status = createLabel("SYSTEM READY")
+        motion = createLabel("Motion level: waiting")
+
+        panel.addView(title)
+        panel.addView(subtitle)
+        panel.addView(status)
+        panel.addView(motion)
+
+        addSection(panel, "SCREEN CAPTURE")
+
+        addButton(panel, "START SCREEN ANALYSIS") {
+            requestScreenCapture()
         }
 
-        menu.addView(title)
-        menu.addView(subtitle)
-        menu.addView(status)
+        addButton(panel, "STOP SCREEN ANALYSIS") {
+            val stopIntent = Intent(
+                this,
+                ScreenCaptureService::class.java
+            ).setAction(ScreenCaptureService.ACTION_STOP)
 
-        addSection(menu, "SCREEN CONTROL")
-
-        addButton(menu, "START SCREEN ANALYSIS") {
-            val manager = getSystemService(
-                Context.MEDIA_PROJECTION_SERVICE
-            ) as MediaProjectionManager
-
-            startActivityForResult(
-                manager.createScreenCaptureIntent(),
-                requestCode
-            )
+            startService(stopIntent)
+            status.text = "Stopping..."
+            motion.text = "Motion level: stopped"
         }
 
-        addButton(menu, "STOP SCREEN ANALYSIS") {
-            startService(
-                Intent(this, ScreenCaptureService::class.java)
-                    .setAction(ScreenCaptureService.ACTION_STOP)
-            )
-            status.text = "SCREEN ANALYSIS STOPPED"
-        }
+        addSection(panel, "AI ANALYSIS MODULES")
 
-        addSection(menu, "AI FEATURES")
+        addInfo(panel, "Frame Analyzer", "Measuring frame changes")
+        addInfo(panel, "Enemy Detection", "Model not connected")
+        addInfo(panel, "Projectile Tracking", "Model not connected")
+        addInfo(panel, "Behavior Learning", "Waiting for observations")
+        addInfo(panel, "Dodge Planner", "Waiting for threat coordinates")
 
-        addToggle(menu, "Enemy Detection", true)
-        addToggle(menu, "Hitbox Visualization", true)
-        addToggle(menu, "Bullet Tracking", true)
-        addToggle(menu, "Projectile Prediction", true)
-        addToggle(menu, "Danger Radar", true)
-        addToggle(menu, "AI Enemy Learning", true)
+        addSection(panel, "SYSTEM INFORMATION")
 
-        addSection(menu, "AUTO DODGE SETTINGS")
+        addInfo(
+            panel,
+            "Current engine",
+            "Frame-to-frame motion analysis"
+        )
 
-        addToggle(menu, "Auto Dodge Analysis", true)
+        addInfo(
+            panel,
+            "Next development",
+            "Object detection and tracking"
+        )
 
-        addSlider(menu, "Detection Sensitivity", 80)
-        addSlider(menu, "Prediction Strength", 85)
-        addSlider(menu, "Danger Distance", 70)
-        addSlider(menu, "Reaction Priority", 90)
+        scroll.addView(panel)
 
-        addSection(menu, "AI INFORMATION")
-
-        val info = TextView(this).apply {
-            text = """
-                Enemy Detection: READY
-                Hitbox Engine: WAITING
-                Projectile Engine: WAITING
-                AI Prediction: WAITING
-                Dodge Analysis: WAITING
-
-                Analysis engines must be connected
-                to the screen capture service.
-            """.trimIndent()
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            setPadding(10, 15, 10, 20)
-        }
-
-        menu.addView(info)
-
-        scroll.addView(menu)
         root.addView(
             scroll,
             LinearLayout.LayoutParams(
@@ -135,96 +149,65 @@ class MainActivity : Activity() {
         setContentView(root)
     }
 
+    private fun requestScreenCapture() {
+        val manager = getSystemService(
+            Context.MEDIA_PROJECTION_SERVICE
+        ) as MediaProjectionManager
+
+        startActivityForResult(
+            manager.createScreenCaptureIntent(),
+            REQUEST_CAPTURE
+        )
+    }
+
+    private fun createLabel(value: String): TextView {
+        return TextView(this).apply {
+            text = value
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setPadding(0, 18, 0, 18)
+        }
+    }
+
     private fun addSection(
         parent: LinearLayout,
-        name: String
+        value: String
     ) {
-        val text = TextView(this).apply {
-            this.text = name
-            textSize = 18f
-            setTextColor(purple)
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, 25, 0, 12)
-        }
-        parent.addView(text)
-    }
-
-    private fun addToggle(
-        parent: LinearLayout,
-        name: String,
-        default: Boolean
-    ) {
-        val toggle = Switch(this).apply {
-            text = name
-            textSize = 15f
-            setTextColor(Color.WHITE)
-            isChecked = prefs.getBoolean(name, default)
-
-            setOnCheckedChangeListener { _, checked ->
-                prefs.edit().putBoolean(name, checked).apply()
-            }
-        }
-
-        parent.addView(toggle)
-    }
-
-    private fun addSlider(
-        parent: LinearLayout,
-        name: String,
-        default: Int
-    ) {
-        val saved = prefs.getInt(name, default)
-
         val label = TextView(this).apply {
-            text = "$name: $saved%"
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            setPadding(0, 12, 0, 0)
-        }
-
-        val slider = SeekBar(this).apply {
-            max = 100
-            progress = saved
-
-            setOnSeekBarChangeListener(
-                object : SeekBar.OnSeekBarChangeListener {
-                    override fun onProgressChanged(
-                        seekBar: SeekBar?,
-                        progress: Int,
-                        fromUser: Boolean
-                    ) {
-                        label.text = "$name: $progress%"
-                        if (fromUser) {
-                            prefs.edit()
-                                .putInt(name, progress)
-                                .apply()
-                        }
-                    }
-
-                    override fun onStartTrackingTouch(
-                        seekBar: SeekBar?
-                    ) {}
-
-                    override fun onStopTrackingTouch(
-                        seekBar: SeekBar?
-                    ) {}
-                }
-            )
+            text = value
+            textSize = 18f
+            setTextColor(Color.rgb(180, 110, 255))
+            setPadding(0, 25, 0, 10)
         }
 
         parent.addView(label)
-        parent.addView(slider)
+    }
+
+    private fun addInfo(
+        parent: LinearLayout,
+        name: String,
+        description: String
+    ) {
+        val label = TextView(this).apply {
+            text = "$name\n$description"
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            setPadding(12, 12, 12, 12)
+        }
+
+        parent.addView(label)
     }
 
     private fun addButton(
         parent: LinearLayout,
-        name: String,
+        value: String,
         action: () -> Unit
     ) {
         val button = Button(this).apply {
-            text = name
+            text = value
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.rgb(100, 45, 160))
+            setBackgroundColor(Color.rgb(105, 48, 165))
             setOnClickListener { action() }
         }
 
@@ -237,6 +220,38 @@ class MainActivity : Activity() {
         )
     }
 
+    override fun onResume() {
+        super.onResume()
+
+        if (!receiverRegistered) {
+            val filter = IntentFilter(
+                ScreenCaptureService.ACTION_STATUS
+            )
+
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(
+                    statusReceiver,
+                    filter,
+                    Context.RECEIVER_NOT_EXPORTED
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(statusReceiver, filter)
+            }
+
+            receiverRegistered = true
+        }
+    }
+
+    override fun onPause() {
+        if (receiverRegistered) {
+            unregisterReceiver(statusReceiver)
+            receiverRegistered = false
+        }
+
+        super.onPause()
+    }
+
     @Deprecated("Use Activity Result API in production")
     override fun onActivityResult(
         requestCode: Int,
@@ -245,31 +260,39 @@ class MainActivity : Activity() {
     ) {
         super.onActivityResult(requestCode, resultCode, data)
 
-        if (requestCode == this.requestCode) {
+        if (requestCode != REQUEST_CAPTURE) return
 
-            if (resultCode == RESULT_OK && data != null) {
+        if (resultCode == RESULT_OK && data != null) {
 
-                val serviceIntent = Intent(
-                    this,
-                    ScreenCaptureService::class.java
-                ).apply {
-                    putExtra(
-                        ScreenCaptureService.EXTRA_RESULT_CODE,
-                        resultCode
-                    )
-                    putExtra(
-                        ScreenCaptureService.EXTRA_DATA,
-                        data
-                    )
-                }
+            val serviceIntent = Intent(
+                this,
+                ScreenCaptureService::class.java
+            ).apply {
+                putExtra(
+                    ScreenCaptureService.EXTRA_RESULT_CODE,
+                    resultCode
+                )
 
-                status.text = "STARTING SCREEN CAPTURE..."
-
-                startForegroundService(serviceIntent)
-
-            } else {
-                status.text = "PERMISSION DENIED"
+                putExtra(
+                    ScreenCaptureService.EXTRA_DATA,
+                    data
+                )
             }
+
+            status.text = "Starting capture..."
+
+            try {
+                if (Build.VERSION.SDK_INT >= 26) {
+                    startForegroundService(serviceIntent)
+                } else {
+                    startService(serviceIntent)
+                }
+            } catch (e: Exception) {
+                status.text = "Start error: ${e.message}"
+            }
+
+        } else {
+            status.text = "Screen capture permission denied"
         }
     }
 }
