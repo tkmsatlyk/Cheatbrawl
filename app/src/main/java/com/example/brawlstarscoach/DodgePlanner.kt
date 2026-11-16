@@ -3,6 +3,7 @@ package com.example.brawlstarscoach
 
 import kotlin.math.sqrt
 import kotlin.math.max
+import kotlin.math.min
 
 data class Point2D(
     val x: Float,
@@ -42,11 +43,16 @@ class DodgePlanner {
         screenHeight: Float
     ): DodgeResult {
 
-        if (threats.isEmpty()) {
+        if (threats.isEmpty() || predictionTime <= 0f) {
             return DodgeResult(
-                Point2D(0f, 0f), 0f, false
+                Point2D(0f, 0f),
+                0f,
+                false
             )
         }
+
+        val moveDistance = 100f
+        val playerSpeed = moveDistance / predictionTime
 
         var bestDirection = Point2D(0f, 0f)
         var bestDanger = Float.POSITIVE_INFINITY
@@ -63,8 +69,8 @@ class DodgePlanner {
             val dy = direction.y / length
 
             val futurePlayer = Point2D(
-                player.x + dx * 100f,
-                player.y + dy * 100f
+                player.x + dx * moveDistance,
+                player.y + dy * moveDistance
             )
 
             if (
@@ -74,33 +80,54 @@ class DodgePlanner {
                 futurePlayer.y > screenHeight - 20f
             ) continue
 
+            val playerVelocity = Point2D(
+                dx * playerSpeed,
+                dy * playerSpeed
+            )
+
             var danger = 0f
 
             for (threat in threats) {
 
-                val futureX =
-                    threat.position.x +
-                    threat.velocity.x * predictionTime
+                val rx = threat.position.x - player.x
+                val ry = threat.position.y - player.y
 
-                val futureY =
-                    threat.position.y +
-                    threat.velocity.y * predictionTime
+                val vx =
+                    threat.velocity.x - playerVelocity.x
+
+                val vy =
+                    threat.velocity.y - playerVelocity.y
+
+                val velocitySquared = vx * vx + vy * vy
+
+                val closestTime = if (velocitySquared > 0.0001f) {
+                    (
+                        -(rx * vx + ry * vy) /
+                        velocitySquared
+                    ).coerceIn(0f, predictionTime)
+                } else {
+                    0f
+                }
+
+                val closestX = rx + vx * closestTime
+                val closestY = ry + vy * closestTime
 
                 val distance = sqrt(
-                    (futurePlayer.x - futureX) *
-                    (futurePlayer.x - futureX) +
-                    (futurePlayer.y - futureY) *
-                    (futurePlayer.y - futureY)
+                    closestX * closestX +
+                    closestY * closestY
                 )
 
                 val safeDistance = max(
-                    1f, threat.radius + 35f
+                    1f,
+                    threat.radius + 35f
                 )
 
-                danger += max(
-                    0f,
-                    (safeDistance - distance) / safeDistance
-                )
+                val risk = (
+                    (safeDistance - distance) /
+                    safeDistance
+                ).coerceIn(0f, 1f)
+
+                danger += risk
             }
 
             if (danger < bestDanger) {
